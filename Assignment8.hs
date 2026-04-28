@@ -5,10 +5,8 @@
 --Description: An arithmetic parser that can follow PEMDAS, handle errors, and use basic arithmetic operators
 --Inputs: An arithmetic expression
 --Outputs: The solution to a given arithmetic expression
---Outside Sources:
+--Outside Sources: Learnuahaskell, ChatGPT
 --Collaborators: Kaitlyn Bedgood
-
-import Debug.Trace --dont forget to remove this or youre fucked
 
 --Turns operators into the Op data type (from slides)
 data Op = Add | Sub | Mul | Div | Mod | Exp
@@ -66,11 +64,22 @@ parseTokens xs = error
 isDigitChar :: Char -> Bool
 isDigitChar c = c >= '0' && c <= '9'
 
+isBinaryOp :: Op -> Bool
+isBinaryOp Add = True
+isBinaryOp Sub = True
+isBinaryOp Mul = True
+isBinaryOp Div = True
+isBinaryOp Mod = True
+isBinaryOp Exp = True
+
 --This code was written with both the notes and ChatGPT "Help me create a parse numbers function in haskell that takes in a list of tokens and combines minus signs and number tokens into negative numbers"
 parseNumbers :: [Token] -> [Token] --adds negative number functionality
 parseNumbers tokens = go Start tokens
     where
         go _ [] = []
+
+        go prev (Op o : rest) =
+            Op o : go AfterOp rest
 
         go prev (Op Sub : Num n : rest)
             | isUnaryContext prev =
@@ -88,24 +97,23 @@ parseNumbers tokens = go Start tokens
         go _ (RightParen : rest) = 
             RightParen : go AfterRParen rest
         
-        go _ (Op Add : rest) = 
-            Op Add : go AfterOp rest
-
-        go _ (Op Mul : rest) =
-            Op Mul : go AfterOp rest
-
-        go _ (Op Div : rest) = 
-            Op Div : go AfterOp rest
-        
         isUnaryContext Start = True
         isUnaryContext AfterOp = True
         isUnaryContext AfterLParen = True
         isUnaryContext _ = False
 
+parseNumbers (Op o : rest)
+  | isBinaryOp o = Op o : parseNumbers rest
+  | otherwise = error "Invalid operator placement"
+
 
 isOperator :: Token -> Bool
 isOperator (Op _) = True
 isOperator _ = False
+
+assoc :: Op -> String
+assoc Exp = "right"
+assoc _   = "left"
 
 prec :: Op -> Int
 prec Add = 1
@@ -127,29 +135,36 @@ shunt (stk, Num n : xs) =
     Num n : shunt (stk, xs)
 
 shunt (stk, Op o1 : xs) =
-  let (stk', out) = pop stk
-  in out ++ shunt (Op o1 : stk', xs)
+    let (stk', popped) = pop stk
+    in popped ++ shunt (Op o1 : stk', xs)
   where
     pop [] = ([], [])
+
     pop (LeftParen : xs) = (LeftParen : xs, [])
 
     pop (Op o2 : xs)
-      | prec o2 >= prec o1 =
-          let (stk'', out) = pop xs
-          in (stk'', Op o2 : out)
+      | prec o2 > prec o1 ||
+        (prec o2 == prec o1 && assoc o1 == "left") =
+          let (stk'', popped) = pop xs
+          in (stk'', Op o2 : popped)
+
       | otherwise = (Op o2 : xs, [])
 
-    pop xs = (xs, [])
+    pop (x:xs) =
+      let (stk'', popped) = pop xs
+      in (stk'', x : popped)
+
+    pop (x:xs) =
+      let (stk'', popped) = pop xs
+      in (stk'', x : popped)
 
 shunt (stk, LeftParen : xs) =
     shunt (LeftParen : stk, xs)
 
 shunt (stk, RightParen : xs) =
   case break (== LeftParen) stk of
-    (before, _:after) ->
-      before ++ shunt (after, xs)
-    _ ->
-      error "Mismatched parentheses"
+    (before, _:after) -> shunt (after, xs)
+    _ -> error "Mismatched parentheses"
 
 apply :: Op -> Float -> Float -> Float
 apply Add x y = x + y
@@ -171,7 +186,6 @@ rpn (y:x:stk, Op o : xs) =
 rpn _ =
   error "Malformed RPN expression (check parentheses/operator balance)"
 
-shuntDebug xs = traceShow (shunt ([], xs)) (shunt ([], xs))
 
 
 parse :: [Char] -> Float
