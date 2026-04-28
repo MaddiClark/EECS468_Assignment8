@@ -8,8 +8,11 @@
 --Outside Sources:
 --Collaborators: Kaitlyn Bedgood
 
+import Debug.Trace --dont forget to remove this or youre fucked
+
 --Turns operators into the Op data type (from slides)
 data Op = Add | Sub | Mul | Div | Mod | Exp
+    deriving (Eq)
 instance Show Op where
     show Add = "+"
     show Sub = "-"
@@ -20,11 +23,13 @@ instance Show Op where
 
 --Turns possible inputs into Token data type (from slides)
 data Token = Num Int | Op Op | LeftParen | RightParen
+    deriving (Eq)
 instance Show Token where
     show (Num n) = show n
     show (Op o) = show o
     show LeftParen = "("
     show RightParen = ")"
+
 
 --ChatGPT helped write this code, "Help me create a parse numbers function in haskell that takes in a list of tokens and combines minus signs and number tokens into negative numbers"
 data Prev
@@ -38,27 +43,28 @@ data Prev
 --Turns all input characters into tokens of their respective data type and handles errors of unrecognized characters (from slides)
 parseTokens :: [Char] -> [Token]
 parseTokens [] = []
+
+parseTokens (c:cs)
+    | c >= '0' && c <= '9' =
+        let (digits, rest) = span isDigitChar (c:cs)
+        in Num (read digits) : parseTokens rest
+
 parseTokens ('*': '*' : xs) = Op Exp : parseTokens xs
 parseTokens ('%': xs) = Op Mod : parseTokens xs
 parseTokens ('/': xs) = Op Div : parseTokens xs
 parseTokens ('*': xs) = Op Mul : parseTokens xs
 parseTokens ('-': xs) = Op Sub : parseTokens xs
 parseTokens ('+': xs) = Op Add : parseTokens xs
+
 parseTokens ('(' : xs) = LeftParen : parseTokens xs
 parseTokens (')' : xs) = RightParen : parseTokens xs
-parseTokens ('0' : xs) = Num 0 : parseTokens xs
-parseTokens ('1' : xs) = Num 1 : parseTokens xs
-parseTokens ('2' : xs) = Num 2 : parseTokens xs
-parseTokens ('3' : xs) = Num 3 : parseTokens xs
-parseTokens ('4' : xs) = Num 4 : parseTokens xs
-parseTokens ('5' : xs) = Num 5 : parseTokens xs
-parseTokens ('6' : xs) = Num 6 : parseTokens xs
-parseTokens ('7' : xs) = Num 7 : parseTokens xs
-parseTokens ('8' : xs) = Num 8 : parseTokens xs
-parseTokens ('9' : xs) = Num 9 : parseTokens xs
+
 parseTokens (' ' : xs) = parseTokens xs
 parseTokens xs = error
     ("Invalid Characters: unrecognized token starting with " ++ xs)
+
+isDigitChar :: Char -> Bool
+isDigitChar c = c >= '0' && c <= '9'
 
 --This code was written with both the notes and ChatGPT "Help me create a parse numbers function in haskell that takes in a list of tokens and combines minus signs and number tokens into negative numbers"
 parseNumbers :: [Token] -> [Token] --adds negative number functionality
@@ -66,12 +72,12 @@ parseNumbers tokens = go Start tokens
     where
         go _ [] = []
 
-        go prev (Sub : Num n : rest)
+        go prev (Op Sub : Num n : rest)
             | isUnaryContext prev =
                 Num (-n) : go AfterNum rest
             
-        go _ (Sub: rest) = 
-            Sub : go AfterOp reset
+        go _ (Op Sub: rest) = 
+            Op Sub : go AfterOp rest
         
         go _ (Num n: rest) = 
             Num n : go AfterNum rest
@@ -82,24 +88,68 @@ parseNumbers tokens = go Start tokens
         go _ (RightParen : rest) = 
             RightParen : go AfterRParen rest
         
-        go _ (Add : rest) = 
-            Add : go AfterOp rest
+        go _ (Op Add : rest) = 
+            Op Add : go AfterOp rest
 
-        go _ (Mul : rest) =
-            Mul : go AfterOp rest
+        go _ (Op Mul : rest) =
+            Op Mul : go AfterOp rest
 
-        go _ (Div : rest) = 
-            Div : go AfterOp rest
+        go _ (Op Div : rest) = 
+            Op Div : go AfterOp rest
         
         isUnaryContext Start = True
         isUnaryContext AfterOp = True
         isUnaryContext AfterLParen = True
         isUnaryContext _ = False
 
+
+isOperator :: Token -> Bool
+isOperator (Op _) = True
+isOperator _ = False
+
+prec :: Op -> Int
+prec Add = 1
+prec Sub = 1
+prec Mul = 2
+prec Div = 2
+prec Mod = 2
+prec Exp = 3
+prec _ = 0
+
 --Shunting yard, from notes
 shunt :: ([Token], [Token]) -> [Token]
-shunt ([], []) = []
-shunt (stk, (Num x : xs)) = Num x : shunt (stk, xs)
+shunt (stk, []) =
+  if LeftParen `elem` stk
+    then error "Mismatched parentheses"
+    else reverse stk
+
+shunt (stk, Num n : xs) =
+    Num n : shunt (stk, xs)
+
+shunt (stk, Op o1 : xs) =
+  let (stk', out) = pop stk
+  in out ++ shunt (Op o1 : stk', xs)
+  where
+    pop [] = ([], [])
+    pop (LeftParen : xs) = (LeftParen : xs, [])
+
+    pop (Op o2 : xs)
+      | prec o2 >= prec o1 =
+          let (stk'', out) = pop xs
+          in (stk'', Op o2 : out)
+      | otherwise = (Op o2 : xs, [])
+
+    pop xs = (xs, [])
+
+shunt (stk, LeftParen : xs) =
+    shunt (LeftParen : stk, xs)
+
+shunt (stk, RightParen : xs) =
+  case break (== LeftParen) stk of
+    (before, _:after) ->
+      before ++ shunt (after, xs)
+    _ ->
+      error "Mismatched parentheses"
 
 apply :: Op -> Float -> Float -> Float
 apply Add x y = x + y
@@ -111,9 +161,22 @@ apply Exp x y = x ** y
 
 rpn :: ([Float], [Token]) -> Float
 rpn ([x], []) = x
-rpn (stk, (Num n : xs)) = rpn ((fromIntegral n : stk), xs)
-rpn ((x : y : stk), (Op o : xs)) = rpn ((apply o y x : stk), xs)
+
+rpn (stk, Num n : xs) =
+  rpn (fromIntegral n : stk, xs)
+
+rpn (y:x:stk, Op o : xs) =
+  rpn (apply o x y : stk, xs)
+
+rpn _ =
+  error "Malformed RPN expression (check parentheses/operator balance)"
+
+shuntDebug xs = traceShow (shunt ([], xs)) (shunt ([], xs))
 
 
 parse :: [Char] -> Float
-parse xs = rpn (shunt (parseTokens xs))
+parse xs =
+  let tokens  = parseTokens xs
+      fixed   = parseNumbers tokens
+      postfix = shunt ([], fixed)
+  in rpn ([], postfix)
