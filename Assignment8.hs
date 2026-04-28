@@ -26,6 +26,15 @@ instance Show Token where
     show LeftParen = "("
     show RightParen = ")"
 
+--ChatGPT helped write this code, "Help me create a parse numbers function in haskell that takes in a list of tokens and combines minus signs and number tokens into negative numbers"
+data Prev
+  = Start
+  | AfterOp
+  | AfterLParen
+  | AfterNum
+  | AfterRParen
+  deriving (Eq, Show)
+
 --Turns all input characters into tokens of their respective data type and handles errors of unrecognized characters (from slides)
 parseTokens :: [Char] -> [Token]
 parseTokens [] = []
@@ -51,7 +60,41 @@ parseTokens (' ' : xs) = parseTokens xs
 parseTokens xs = error
     ("Invalid Characters: unrecognized token starting with " ++ xs)
 
+--This code was written with both the notes and ChatGPT "Help me create a parse numbers function in haskell that takes in a list of tokens and combines minus signs and number tokens into negative numbers"
 parseNumbers :: [Token] -> [Token] --adds negative number functionality
+parseNumbers tokens = go Start tokens
+    where
+        go _ [] = []
+
+        go prev (Sub : Num n : rest)
+            | isUnaryContext prev =
+                Num (-n) : go AfterNum rest
+            
+        go _ (Sub: rest) = 
+            Sub : go AfterOp reset
+        
+        go _ (Num n: rest) = 
+            Num n : go AfterNum rest
+
+        go _ (LeftParen : rest) =
+            LeftParen : go AfterLParen rest
+        
+        go _ (RightParen : rest) = 
+            RightParen : go AfterRParen rest
+        
+        go _ (Add : rest) = 
+            Add : go AfterOp rest
+
+        go _ (Mul : rest) =
+            Mul : go AfterOp rest
+
+        go _ (Div : rest) = 
+            Div : go AfterOp rest
+        
+        isUnaryContext Start = True
+        isUnaryContext AfterOp = True
+        isUnaryContext AfterLParen = True
+        isUnaryContext _ = False
 
 --Shunting yard, from notes
 shunt :: ([Token], [Token]) -> [Token]
