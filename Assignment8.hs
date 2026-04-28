@@ -170,8 +170,11 @@ apply :: Op -> Float -> Float -> Float
 apply Add x y = x + y
 apply Sub x y = x - y
 apply Mul x y = x * y
+apply Div x 0 = error "Division by zero"
 apply Div x y = x / y
-apply Mod x y = x - (fromIntegral(floor (x/y)) * y)
+
+apply Mod x 0 = error "Modulo by zero"
+apply Mod x y = x - (fromIntegral (floor (x / y)) * y)
 apply Exp x y = x ** y
 
 rpn :: ([Float], [Token]) -> Float
