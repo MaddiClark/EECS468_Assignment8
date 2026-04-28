@@ -51,11 +51,9 @@ parseTokens (' ' : xs) = parseTokens xs
 parseTokens xs = error
     ("Invalid Characters: unrecognized token starting with " ++ xs)
 
-parseNumbers :: [Token] -> [Token]
-parseNumbers = (Token Sub >> neg <|> nat) 
-    where
-        token 
+parseNumbers :: [Token] -> [Token] --adds negative number functionality
 
+--Shunting yard, from notes
 shunt :: ([Token], [Token]) -> [Token]
 shunt ([], []) = []
 shunt (stk, (Num x : xs)) = Num x : shunt (stk, xs)
@@ -67,6 +65,11 @@ apply Mul x y = x * y
 apply Div x y = x / y
 apply Mod x y = x - (fromIntegral(floor (x/y)) * y)
 apply Exp x y = x ** y
+
+rpn :: ([Float], [Token]) -> Float
+rpn ([x], []) = x
+rpn (stk, (Num n : xs)) = rpn ((fromIntegral n : stk), xs)
+rpn ((x : y : stk), (Op o : xs)) = rpn ((apply o y x : stk), xs)
 
 
 parse :: [Char] -> Float
